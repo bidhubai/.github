@@ -21,15 +21,15 @@ jobs:
       pull-requests: write
       issues: write
     steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+
       - name: Checkout shared workflows repo
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/.github
-          path: .github-shared
+          path: .github
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout current repo
-        uses: actions/checkout@v4
 
       - name: Get PR stats using GitHub API
         id: pr_stats
@@ -37,7 +37,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const scriptPath = '.github-shared/scripts/get-pr-stats.js';
+            const scriptPath = '.github/.github/scripts/get-pr-stats.js';
             const fs = require('fs');
             const scriptContent = fs.readFileSync(scriptPath, 'utf8');
             eval(scriptContent);
@@ -100,7 +100,7 @@ jobs:
         with:
           github-token: ${{ secrets.PROJECT_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
-            const scriptPath = '.github-shared/scripts/log-to-project.js';
+            const scriptPath = '.github/.github/scripts/log-to-project.js';
             const fs = require('fs');
             const scriptContent = fs.readFileSync(scriptPath, 'utf8');
             eval(scriptContent);
