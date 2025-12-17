@@ -1,0 +1,107 @@
+name: PR Effort Stats (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      project_name:
+        description: 'Name of the GitHub Project to log to'
+        required: false
+        default: 'Efforts'
+        type: string
+    secrets:
+      PROJECT_ACCESS_TOKEN:
+        description: 'Personal Access Token with project scope (optional, falls back to GITHUB_TOKEN)'
+        required: false
+
+jobs:
+  pr-effort-stats:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout shared workflows repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/.github
+          path: .github-shared
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+
+      - name: Get PR stats using GitHub API
+        id: pr_stats
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const scriptPath = '.github-shared/scripts/get-pr-stats.js';
+            const fs = require('fs');
+            const scriptContent = fs.readFileSync(scriptPath, 'utf8');
+            eval(scriptContent);
+
+      - name: Create PR comment
+        run: |
+          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+          FILES_CHANGED="${{ steps.pr_stats.outputs.files_changed }}"
+          ADDITIONS="${{ steps.pr_stats.outputs.additions }}"
+          DELETIONS="${{ steps.pr_stats.outputs.deletions }}"
+          TOTAL_CHANGES="${{ steps.pr_stats.outputs.total_changes }}"
+          EFFORT="${{ steps.pr_stats.outputs.effort }}"
+          
+          echo "Files changed: $FILES_CHANGED"
+          echo "Additions: $ADDITIONS"
+          echo "Deletions: $DELETIONS"
+          echo "Total changes: $TOTAL_CHANGES"
+          echo "Work effort: $EFFORT"
+          
+          # Create comment body
+          cat > comment_body.md << EOF
+          ## 📊 Work Effort Statistics
+          
+          This PR contains the following code changes:
+          
+          | Metric | Value |
+          |--------|-------|
+          | Files Changed | $FILES_CHANGED |
+          | Lines Added | +$ADDITIONS |
+          | Lines Deleted | -$DELETIONS |
+          | **Total Lines Changed** | **$TOTAL_CHANGES** |
+          | **Work Effort** | **$EFFORT** |
+          
+          ---
+          *PR by @$PR_AUTHOR*
+          EOF
+
+      - name: Comment PR stats
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const commentBody = fs.readFileSync('comment_body.md', 'utf8');
+            
+            const prNumber = context.payload.pull_request.number;
+            console.log(`Commenting on PR #${prNumber}`);
+            
+            await github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
+
+      - name: Log PR to Efforts Project
+        uses: actions/github-script@v7
+        env:
+          PROJECT_NAME: ${{ inputs.project_name }}
+        with:
+          github-token: ${{ secrets.PROJECT_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const scriptPath = '.github-shared/scripts/log-to-project.js';
+            const fs = require('fs');
+            const scriptContent = fs.readFileSync(scriptPath, 'utf8');
+            eval(scriptContent);
+
