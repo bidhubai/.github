@@ -61,7 +61,10 @@
   });
 
   // Calculate work effort: sqrt(deletions * 0.2 + additions * 1.0)
-  const effort = Math.sqrt(deletions * 0.2 + additions * 1.0);
+  const lineScore = deletions * 0.2 + additions * 1.0
+  const lineScoreUnit = 200
+  const lineScoreUnitCount = Math.floor(lineScore / lineScoreUnit)
+  const effort = lineScoreUnitCount * Math.sqrt(lineScoreUnit) + Math.sqrt(lineScore - lineScoreUnitCount * lineScoreUnit);
 
   const stats = {
     filesChanged,
