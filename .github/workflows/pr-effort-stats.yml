@@ -8,6 +8,11 @@ on:
         required: false
         default: 'Efforts'
         type: string
+      weight:
+        description: 'Weight multiplier to apply to effort calculation (default: 1.0)'
+        required: false
+        default: '1.0'
+        type: string
     secrets:
       PROJECT_ACCESS_TOKEN:
         description: 'Personal Access Token with project scope (optional, falls back to GITHUB_TOKEN)'
@@ -33,6 +38,8 @@ jobs:
 
       - name: Get PR stats using GitHub API
         id: pr_stats
+        env:
+          WEIGHT: ${{ inputs.weight }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -97,6 +104,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           PROJECT_NAME: ${{ inputs.project_name }}
+          WEIGHT: ${{ inputs.weight }}
         with:
           github-token: ${{ secrets.PROJECT_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
           script: |

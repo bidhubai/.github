@@ -128,6 +128,8 @@ async function getProjectFields(projectId, prAuthor) {
   
   // Find specific fields
   const effortField = fields.find(f => f.name.toLowerCase() === 'effort');
+  const weightField = fields.find(f => f.name.toLowerCase() === 'weight');
+  const repoNameField = fields.find(f => f.name.toLowerCase() === 'reponame');
   const statusField = fields.find(f => f.name.toLowerCase() === 'status');
   const assigneeField = fields.find(f => f.name.toLowerCase() === 'assignees');
   
@@ -168,6 +170,8 @@ async function getProjectFields(projectId, prAuthor) {
   
   return {
     effortField,
+    weightField,
+    repoNameField,
     statusField,
     assigneeField,
     doneOptionId,
@@ -254,7 +258,7 @@ async function findExistingIssueInProject(projectId, prNumber) {
 /**
  * Create issue body text
  */
-function createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort) {
+function createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort, weight) {
   return `**PR:** #${prNumber}
 **PR Link:** ${prUrl}
 
@@ -266,18 +270,19 @@ function createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort) {
 - Additions: +${stats.additions}
 - Deletions: -${stats.deletions}
 - Total Changes: ${stats.totalChanges}
+- **Weight: ${weight}**
 - **Effort: ${effort}**`;
 }
 
 /**
  * Find or create issue for PR
  */
-async function findOrCreateIssue(orgLogin, repository, prNumber, prTitle, prUrl, prAuthor, stats, effort, projectId) {
+async function findOrCreateIssue(orgLogin, repository, prNumber, prTitle, prUrl, prAuthor, stats, effort, weight, projectId) {
   // First check if issue exists in project
   const projectIssue = await findExistingIssueInProject(projectId, prNumber);
   
   if (projectIssue) {
-    const issueBody = createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort);
+    const issueBody = createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort, weight);
     const newTitle = `PR #${prNumber}: ${prTitle}`;
     
     await github.rest.issues.update({
@@ -305,7 +310,7 @@ async function findOrCreateIssue(orgLogin, repository, prNumber, prTitle, prUrl,
   
   if (searchResult.data.items && searchResult.data.items.length > 0) {
     const repoIssue = searchResult.data.items[0];
-    const issueBody = createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort);
+    const issueBody = createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort, weight);
     const newTitle = `PR #${prNumber}: ${prTitle}`;
     
     await github.rest.issues.update({
@@ -327,7 +332,7 @@ async function findOrCreateIssue(orgLogin, repository, prNumber, prTitle, prUrl,
   }
   
   // Create new issue
-  const issueBody = createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort);
+  const issueBody = createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort, weight);
   console.log(`Creating new issue for PR #${prNumber}...`);
   
   const createIssueResult = await github.rest.issues.create({
@@ -384,12 +389,12 @@ async function addIssueToProject(projectId, issueId, existingItemId) {
 }
 
 /**
- * Update project item fields (effort, status, assignee)
+ * Update project item fields (effort, weight, reponame, status, assignee)
  */
-async function updateProjectFields(projectId, itemId, issueNumber, orgLogin, repository, prAuthor, effort, fields) {
+async function updateProjectFields(projectId, itemId, issueNumber, orgLogin, repository, prAuthor, effort, weight, fields) {
   if (!itemId) return;
   
-  const { effortField, statusField, assigneeField, doneOptionId, assigneeUserId } = fields;
+  const { effortField, weightField, repoNameField, statusField, assigneeField, doneOptionId, assigneeUserId } = fields;
   
   // Update effort field
   if (effortField) {
@@ -418,6 +423,66 @@ async function updateProjectFields(projectId, itemId, issueNumber, orgLogin, rep
       console.log(`Updated effort field: ${effort}`);
     } catch (fieldError) {
       console.log(`Could not update effort field: ${fieldError.message}`);
+    }
+  }
+  
+  // Update weight field
+  if (weightField) {
+    const updateWeightMutation = `
+      mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: Float!) {
+        updateProjectV2ItemFieldValue(input: {
+          projectId: $projectId
+          itemId: $itemId
+          fieldId: $fieldId
+          value: {
+            number: $value
+          }
+        }) {
+          clientMutationId
+        }
+      }
+    `;
+    
+    try {
+      await github.graphql(updateWeightMutation, {
+        projectId,
+        itemId,
+        fieldId: weightField.id,
+        value: weight
+      });
+      console.log(`Updated weight field: ${weight}`);
+    } catch (fieldError) {
+      console.log(`Could not update weight field: ${fieldError.message}`);
+    }
+  }
+  
+  // Update repo name field
+  if (repoNameField) {
+    const updateRepoNameMutation = `
+      mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) {
+        updateProjectV2ItemFieldValue(input: {
+          projectId: $projectId
+          itemId: $itemId
+          fieldId: $fieldId
+          value: {
+            text: $value
+          }
+        }) {
+          clientMutationId
+        }
+      }
+    `;
+    
+    try {
+      await github.graphql(updateRepoNameMutation, {
+        projectId,
+        itemId,
+        fieldId: repoNameField.id,
+        value: repository
+      });
+      console.log(`Updated repo name field: ${repository}`);
+    } catch (fieldError) {
+      console.log(`Could not update repo name field: ${fieldError.message}`);
     }
   }
   
@@ -480,15 +545,22 @@ async function updateProjectFields(projectId, itemId, issueNumber, orgLogin, rep
   const prUrl = context.payload.pull_request.html_url;
   const prTitle = context.payload.pull_request.title;
   const prAuthor = context.payload.pull_request.user.login;
-  const repository = context.repo.repo;
+  // Get repository name from PR payload (most reliable for PR events)
+  // Falls back to context.repo.repo if payload is not available
+  const repository = context.payload.pull_request?.base?.repo?.name || 
+                     context.payload.repository?.name || 
+                     context.repo.repo;
   
   // Read stats from file
   const fs = require('fs');
   const stats = JSON.parse(fs.readFileSync('pr_stats.json', 'utf8'));
   const effort = parseFloat(stats.effort.toFixed(2));
+  const weight = parseFloat(stats.weight || process.env.WEIGHT || '1.0');
   
   console.log(`Logging PR #${prNumber} to project "${projectName}"...`);
+  console.log(`Repository: ${repository}`);
   console.log(`Effort: ${effort}`);
+  console.log(`Weight: ${weight}`);
   
   try {
     // Step 1: Find project
@@ -507,6 +579,7 @@ async function updateProjectFields(projectId, itemId, issueNumber, orgLogin, rep
       prAuthor,
       stats,
       effort,
+      weight,
       project.id
     );
     
@@ -522,12 +595,15 @@ async function updateProjectFields(projectId, itemId, issueNumber, orgLogin, rep
       repository,
       prAuthor,
       effort,
+      weight,
       fields
     );
     
     console.log(`Successfully logged PR #${prNumber} to project "${projectName}"`);
     core.setOutput('project_item_id', itemId);
     core.setOutput('effort', effort.toString());
+    core.setOutput('weight', weight.toString());
+    core.setOutput('repository', repository);
     
   } catch (error) {
     console.error('Error logging to project:', error);

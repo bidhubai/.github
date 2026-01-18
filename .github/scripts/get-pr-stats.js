@@ -64,7 +64,11 @@
   const lineScore = deletions * 0.2 + additions * 1.0
   const lineScoreUnit = 200
   const lineScoreUnitCount = Math.floor(lineScore / lineScoreUnit)
-  const effort = lineScoreUnitCount * Math.sqrt(lineScoreUnit) + Math.sqrt(lineScore - lineScoreUnitCount * lineScoreUnit);
+  const baseEffort = lineScoreUnitCount * Math.sqrt(lineScoreUnit) + Math.sqrt(lineScore - lineScoreUnitCount * lineScoreUnit);
+  
+  // Apply weight multiplier if provided
+  const weight = parseFloat(process.env.WEIGHT || '1.0');
+  const effort = baseEffort * weight;
 
   const stats = {
     filesChanged,
@@ -72,6 +76,7 @@
     deletions,
     totalChanges,
     effort,
+    weight,
     changedLines: JSON.stringify(changedLines),
     files: allFiles.map(f => f.filename)
   };
@@ -81,6 +86,7 @@
   console.log(`Additions: ${stats.additions}`);
   console.log(`Deletions: ${stats.deletions}`);
   console.log(`Total changes: ${stats.totalChanges}`);
+  console.log(`Weight: ${stats.weight}`);
   console.log(`Work effort: ${stats.effort.toFixed(2)}`);
   console.log('====================');
 
@@ -90,6 +96,7 @@
   core.setOutput('deletions', stats.deletions.toString());
   core.setOutput('total_changes', stats.totalChanges.toString());
   core.setOutput('effort', stats.effort.toFixed(2));
+  core.setOutput('weight', stats.weight.toString());
   core.setOutput('changed_lines', stats.changedLines);
   core.setOutput('files', JSON.stringify(stats.files));
 
