@@ -180,10 +180,10 @@ async function getProjectFields(projectId, prAuthor) {
 }
 
 /**
- * Find existing issue in project for the given PR number
+ * Find existing issue in project for the given PR number and repository
  */
-async function findExistingIssueInProject(projectId, prNumber) {
-  console.log(`Checking project items for existing issue for PR #${prNumber}...`);
+async function findExistingIssueInProject(projectId, prNumber, repository) {
+  console.log(`Checking project items for existing issue for PR #${prNumber} in repository ${repository}...`);
   
   const getProjectItemsQuery = `
     query($projectId: ID!, $cursor: String) {
@@ -237,11 +237,26 @@ async function findExistingIssueInProject(projectId, prNumber) {
         if (item.content && item.content.title) {
           const titleMatch = item.content.title.match(/^PR #(\d+):/);
           if (titleMatch && parseInt(titleMatch[1]) === prNumber) {
-            console.log(`Found existing issue #${item.content.number} in project for PR #${prNumber}`);
-            return {
-              issue: item.content,
-              itemId: item.id
-            };
+            // Also check repository name in the issue body
+            // Repository is stored as "**Repository:** <repo-name>" in the body
+            const body = item.content.body || '';
+            const repoMatch = body.match(/\*\*Repository:\*\* (.+)/);
+            const issueRepo = repoMatch ? repoMatch[1].trim() : null;
+            
+            // Match if PR number matches AND repository matches
+            // If repository is not found in body (old issue format), skip it to avoid false matches
+            // This ensures we only match PRs from the correct repository
+            if (issueRepo === repository) {
+              console.log(`Found existing issue #${item.content.number} in project for PR #${prNumber} in repository ${repository}`);
+              return {
+                issue: item.content,
+                itemId: item.id
+              };
+            } else if (issueRepo !== null) {
+              console.log(`Found PR #${prNumber} but repository mismatch: expected ${repository}, found ${issueRepo} - skipping`);
+            } else {
+              console.log(`Found PR #${prNumber} but repository field not found in issue body - skipping to avoid cross-repo conflicts`);
+            }
           }
         }
       }
@@ -279,7 +294,7 @@ function createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort, w
  */
 async function findOrCreateIssue(orgLogin, repository, prNumber, prTitle, prUrl, prAuthor, stats, effort, weight, projectId) {
   // First check if issue exists in project
-  const projectIssue = await findExistingIssueInProject(projectId, prNumber);
+  const projectIssue = await findExistingIssueInProject(projectId, prNumber, repository);
   
   if (projectIssue) {
     const issueBody = createIssueBody(prNumber, prUrl, repository, prAuthor, stats, effort, weight);
