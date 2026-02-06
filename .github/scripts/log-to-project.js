@@ -129,7 +129,7 @@ async function getProjectFields(projectId, prAuthor) {
   // Find specific fields
   const effortField = fields.find(f => f.name.toLowerCase() === 'effort');
   const weightField = fields.find(f => f.name.toLowerCase() === 'weight');
-  const repoNameField = fields.find(f => f.name.toLowerCase() === 'reponame');
+  const dateField = fields.find(f => f.name.toLowerCase() === 'date');
   const statusField = fields.find(f => f.name.toLowerCase() === 'status');
   const assigneeField = fields.find(f => f.name.toLowerCase() === 'assignees');
   
@@ -171,7 +171,7 @@ async function getProjectFields(projectId, prAuthor) {
   return {
     effortField,
     weightField,
-    repoNameField,
+    dateField,
     statusField,
     assigneeField,
     doneOptionId,
@@ -404,12 +404,12 @@ async function addIssueToProject(projectId, issueId, existingItemId) {
 }
 
 /**
- * Update project item fields (effort, weight, reponame, status, assignee)
+ * Update project item fields (effort, weight, date, status, assignee)
  */
 async function updateProjectFields(projectId, itemId, issueNumber, orgLogin, repository, prAuthor, effort, weight, fields) {
   if (!itemId) return;
   
-  const { effortField, weightField, repoNameField, statusField, assigneeField, doneOptionId, assigneeUserId } = fields;
+  const { effortField, weightField, dateField, statusField, assigneeField, doneOptionId, assigneeUserId } = fields;
   
   // Update effort field
   if (effortField) {
@@ -471,16 +471,21 @@ async function updateProjectFields(projectId, itemId, issueNumber, orgLogin, rep
     }
   }
   
-  // Update repo name field
-  if (repoNameField) {
-    const updateRepoNameMutation = `
-      mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) {
+  // Update date field
+  if (dateField) {
+    // Get the PR creation date or use current date
+    const prDate = context.payload.pull_request?.created_at || new Date().toISOString();
+    // Format date as YYYY-MM-DD for GitHub Projects date field
+    const dateValue = new Date(prDate).toISOString().split('T')[0];
+    
+    const updateDateMutation = `
+      mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: Date!) {
         updateProjectV2ItemFieldValue(input: {
           projectId: $projectId
           itemId: $itemId
           fieldId: $fieldId
           value: {
-            text: $value
+            date: $value
           }
         }) {
           clientMutationId
@@ -489,15 +494,15 @@ async function updateProjectFields(projectId, itemId, issueNumber, orgLogin, rep
     `;
     
     try {
-      await github.graphql(updateRepoNameMutation, {
+      await github.graphql(updateDateMutation, {
         projectId,
         itemId,
-        fieldId: repoNameField.id,
-        value: repository
+        fieldId: dateField.id,
+        value: dateValue
       });
-      console.log(`Updated repo name field: ${repository}`);
+      console.log(`Updated date field: ${dateValue}`);
     } catch (fieldError) {
-      console.log(`Could not update repo name field: ${fieldError.message}`);
+      console.log(`Could not update date field: ${fieldError.message}`);
     }
   }
   
